@@ -1,6 +1,6 @@
 """
 Enhanced OSINT System v2.0 - Configuration Management
-Centralized configuration for Coolify deployment
+Centralized configuration for Coolify deployment with PocketBase
 """
 
 import os
@@ -9,17 +9,17 @@ from dataclasses import dataclass
 
 @dataclass
 class DatabaseConfig:
-    """Database configuration settings"""
+    """PocketBase database configuration settings"""
     url: str
-    anon_key: str
-    project_id: str = ""
+    email: str
+    password: str
     
     @classmethod
     def from_env(cls) -> 'DatabaseConfig':
         return cls(
-            url=os.getenv('SUPABASE_URL', ''),
-            anon_key=os.getenv('SUPABASE_ANON_KEY', ''),
-            project_id=os.getenv('SUPABASE_PROJECT_ID', '')
+            url=os.getenv('POCKETBASE_URL', 'https://pocketbase.ignitabull.org'),
+            email=os.getenv('POCKETBASE_EMAIL', 'jeremy@ignitabull.com'),
+            password=os.getenv('POCKETBASE_PASSWORD', 'Negroid18!')
         )
 
 @dataclass
@@ -71,6 +71,19 @@ class OSINTConfig:
             social_timeout=int(os.getenv('SOCIAL_TIMEOUT', '20'))
         )
 
+@dataclass
+class ServerConfig:
+    """Server configuration settings"""
+    port: int
+    host: str
+    
+    @classmethod
+    def from_env(cls) -> 'ServerConfig':
+        return cls(
+            port=int(os.getenv('PORT', '8002')),
+            host=os.getenv('HOST', '0.0.0.0')
+        )
+
 class Config:
     """Main configuration class"""
     
@@ -79,6 +92,7 @@ class Config:
         self.processing = ProcessingConfig.from_env()
         self.logging = LoggingConfig.from_env()
         self.osint = OSINTConfig.from_env()
+        self.server = ServerConfig.from_env()
         
         # Environment
         self.environment = os.getenv('ENVIRONMENT', 'production')
@@ -93,7 +107,7 @@ class Config:
         return {
             'database': {
                 'url': self.database.url,
-                'project_id': self.database.project_id
+                'email': self.database.email
             },
             'processing': {
                 'max_workers': self.processing.max_workers,
@@ -104,14 +118,18 @@ class Config:
                 'level': self.logging.level,
                 'file_path': self.logging.file_path
             },
+            'server': {
+                'port': self.server.port,
+                'host': self.server.host
+            },
             'environment': self.environment,
             'debug': self.debug
         }
     
     def validate(self) -> bool:
         """Validate configuration"""
-        if not self.database.url or not self.database.anon_key:
-            print("❌ Missing Supabase credentials")
+        if not self.database.url or not self.database.email or not self.database.password:
+            print("❌ Missing PocketBase credentials")
             return False
         
         if self.processing.max_workers <= 0:
