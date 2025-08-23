@@ -11,10 +11,10 @@ import asyncio
 import concurrent.futures
 from datetime import datetime
 from typing import Dict, List, Optional
-from validators import validate_email
-from dns_utils import get_mail_server_details
-from whois_utils import domain_whois
-from social_media import social_media_lookup
+from osint_tools.validators import validate_email
+from osint_tools.dns_utils import get_mail_server_details
+from osint_tools.whois_utils import domain_whois
+from osint_tools.social_media import social_media_lookup
 
 def get_leads_from_sandbox(limit: int = 1000) -> List[Dict]:
     """Get real leads from the sandbox table for testing"""
@@ -222,13 +222,14 @@ def enrich_real_lead(lead: Dict) -> Dict:
     try:
         # 1. Email Validation (20 points)
         print("   📧 Validating email...")
-        if validate_email(lead["email"]):
+        is_valid, message = validate_email(lead["email"])
+        if is_valid:
             enrichment_result["enrichment_data"]["email_valid"] = True
             enrichment_result["score"] += 20
-            print("      ✅ Email valid")
+            print(f"      ✅ {message}")
         else:
             enrichment_result["enrichment_data"]["email_valid"] = False
-            print("      ❌ Email invalid")
+            print(f"      ❌ {message}")
         
         # 2. Domain Analysis (30 points)
         domain = lead["email"].split("@")[1]
@@ -368,19 +369,20 @@ def process_leads_parallel(leads: List[Dict], max_workers: int = 10) -> List[Dic
     
     return results
 
-def process_real_leads_production_parallel(batch_size: int = 1000, max_workers: int = 20):
+def process_real_leads_production_parallel(num_leads: int = 10, max_workers: int = 5, batch_size: int = 1000, pb_client=None, processing_status_ref=None):
     """Process real leads in production mode with PARALLEL PROCESSING"""
     print("🚀 PRODUCTION CLOUD OSINT ENRICHMENT - PARALLEL VERSION")
     print("=" * 70)
-    print("📊 Processing REAL leads from Ultra Scraper database")
-    print("☁️ Running in Docker Offload with GPU acceleration")
-    print(f"🎯 Batch size: {batch_size} leads")
+    print("📊 Processing REAL leads from Enhanced OSINT System")
+    print(f"🎯 Number of leads: {num_leads}")
     print(f"⚡ Parallel workers: {max_workers}")
     print(f"🚀 Expected speedup: {max_workers}x faster than sequential!")
     print()
     
+    total_start_time = time.time()
+    
     # Get real leads from sandbox
-    leads = get_leads_from_sandbox(batch_size)
+    leads = get_leads_from_sandbox(num_leads)
     
     if not leads:
         print("❌ No leads found to process")
@@ -393,11 +395,18 @@ def process_real_leads_production_parallel(batch_size: int = 1000, max_workers: 
     results = process_leads_parallel(leads, max_workers)
     
     # Calculate summary statistics
-    total_start_time = time.time()
     total_time = time.time() - total_start_time
     completed_leads = [r for r in results if r["status"] == "completed"]
     avg_score = sum(r["score"] for r in completed_leads) / len(completed_leads) if completed_leads else 0
     success_rate = len(completed_leads) / len(results) * 100
+    
+    # Update processing status if provided
+    if processing_status_ref:
+        processing_status_ref['processed_leads'] = len(results)
+        processing_status_ref['successful_leads'] = len(completed_leads)
+        processing_status_ref['failed_leads'] = len(results) - len(completed_leads)
+        processing_status_ref['progress_percentage'] = 100.0
+        processing_status_ref['last_update'] = datetime.now().isoformat()
     
     print("📊 PARALLEL ENRICHMENT RESULTS")
     print("=" * 70)
@@ -412,19 +421,17 @@ def process_real_leads_production_parallel(batch_size: int = 1000, max_workers: 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     results_file = f"parallel_enrichment_{timestamp}.json"
     
-    with open(results_file, 'w') as f:
+    with open(results_file, 'w', encoding='utf-8') as f:
         json.dump({
             "test_type": "parallel_production_cloud_enrichment",
             "timestamp": timestamp,
-            "batch_size": batch_size,
+            "num_leads": num_leads,
             "max_workers": max_workers,
             "total_leads": len(results),
             "successful_leads": len(completed_leads),
             "success_rate": success_rate,
             "average_score": avg_score,
             "total_processing_time": total_time,
-            "docker_offload": True,
-            "gpu_accelerated": True,
             "parallel_processing": True,
             "speedup_factor": max_workers,
             "results": results
@@ -454,4 +461,4 @@ def process_real_leads_production_parallel(batch_size: int = 1000, max_workers: 
 if __name__ == "__main__":
     # Process real leads in production mode with PARALLEL PROCESSING
     # This will be 80x faster than the sequential version!
-    process_real_leads_production_parallel(batch_size=5000, max_workers=80)
+    process_real_leads_production_parallel(num_leads=10, max_workers=5)
