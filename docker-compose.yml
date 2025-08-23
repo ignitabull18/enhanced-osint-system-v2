@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  enhanced-osint:
+    build: .
+    container_name: enhanced-osint-coolify
+    restart: unless-stopped
+    environment:
+      - MAX_WORKERS=80
+      - BATCH_SIZE=5000
+      - LOG_LEVEL=INFO
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+    volumes:
+      - ./logs:/app/logs
+      - ./config:/app/config
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+    networks:
+      - osint-network
+
+  # Optional: Add Redis for caching and job queuing
+  redis:
+    image: redis:7-alpine
+    container_name: osint-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - osint-network
+
+volumes:
+  redis_data:
+
+networks:
+  osint-network:
+    driver: bridge
