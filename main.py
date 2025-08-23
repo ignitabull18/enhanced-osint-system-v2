@@ -105,7 +105,8 @@ def index():
         "environment": config.environment,
         "database_configured": "PocketBase" if pb_client else "None/Failed",
         "api_endpoints": {
-            "/health": "Health check endpoint",
+            "/health": "Liveness probe (always 200)",
+            "/ready": "Readiness probe (checks PocketBase)",
             "/status": "Current OSINT processing job status",
             "/process": "POST to start a new OSINT processing job"
         }
@@ -113,11 +114,17 @@ def index():
 
 @app.route('/health')
 def health_check():
-    """Health check endpoint for Coolify."""
-    if pb_client and pb_client.auth_token:
-        return jsonify({"status": "healthy", "database": "connected"}), 200
-    else:
-        return jsonify({"status": "unhealthy", "database": "disconnected"}), 503
+    """Liveness check endpoint for Coolify."""
+    return jsonify({"status": "ok"}), 200
+
+@app.route('/ready')
+def ready_check():
+    """Readiness check: verifies PocketBase connectivity."""
+    is_ready = bool(pb_client and pb_client.auth_token)
+    return jsonify({
+        "ready": is_ready,
+        "database": "connected" if is_ready else "disconnected"
+    }), (200 if is_ready else 503)
 
 @app.route('/status')
 def get_status():
@@ -131,7 +138,7 @@ def start_processing():
     if processing_status['status'] == 'running':
         return jsonify({"error": "A processing job is already running."}), 409
 
-    data = request.get_json()
+    data = request.get_json() or {}
     num_leads = data.get('num_leads', 10)  # Default to 10 leads for testing
     job_id = f"osint-job-{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
