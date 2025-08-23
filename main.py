@@ -122,12 +122,6 @@ def health():
     """Health check endpoint for Coolify"""
     try:
         config = get_config()
-        if not config.validate():
-            return jsonify({
-                "status": "unhealthy",
-                "error": "Configuration validation failed",
-                "timestamp": datetime.utcnow().isoformat()
-            }), 500
         
         # Check PocketBase connection
         pocketbase_healthy = False
@@ -216,11 +210,6 @@ def main():
         print(f"🔧 Max Workers: {config.processing.max_workers}")
         print(f"📊 Batch Size: {config.processing.batch_size}")
         
-        # Validate configuration
-        if not config.validate():
-            print("❌ Configuration validation failed")
-            sys.exit(1)
-        
         # Setup logging
         setup_logging(config)
         logger = logging.getLogger(__name__)
@@ -240,13 +229,13 @@ def main():
             logger.warning(f"PocketBase connection failed: {e}")
             pocketbase_client = None
         
-        # Start Flask app
-        print("🌐 Starting Flask web service...")
-        logger.info("Starting Flask web service")
+        # Start Flask app on port 8002
+        print("🌐 Starting Flask web service on port 8002...")
+        logger.info("Starting Flask web service on port 8002")
         
         app.run(
             host='0.0.0.0',
-            port=8000,
+            port=8002,
             debug=False,
             threaded=True
         )
