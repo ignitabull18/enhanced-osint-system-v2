@@ -1,55 +1,58 @@
 #!/usr/bin/env python3
 """
-Enhanced OSINT System v2.0 - Coolify Deployment
-Simplified Flask web service for testing
+Ultra-simple test server for debugging Coolify deployment
 """
 
 import os
-import logging
-from datetime import datetime
-from flask import Flask, jsonify
+import http.server
+import socketserver
 
-# Initialize Flask app
-app = Flask(__name__)
+PORT = int(os.getenv('PORT', 8002))
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-@app.route('/')
-def index():
-    """Root endpoint providing system information."""
-    return jsonify({
-        "system": "Enhanced OSINT System v2.0",
-        "status": "Operational",
-        "message": "Welcome to the Enhanced OSINT System API!",
-        "version": "2.0",
-        "timestamp": datetime.now().isoformat(),
-        "api_endpoints": {
-            "/health": "Health check endpoint",
-            "/status": "Current system status"
-        }
-    })
-
-@app.route('/health')
-def health_check():
-    """Health check endpoint for Coolify."""
-    return jsonify({
-        "status": "healthy", 
-        "timestamp": datetime.now().isoformat(),
-        "version": "2.0"
-    }), 200
-
-@app.route('/status')
-def get_status():
-    """Returns the current system status."""
-    return jsonify({
-        "status": "idle",
-        "timestamp": datetime.now().isoformat(),
-        "version": "2.0"
-    })
+class TestHandler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html')
+            self.end_headers()
+            response = f"""
+            <html>
+            <head><title>Enhanced OSINT System v2.0</title></head>
+            <body>
+                <h1>🚀 Enhanced OSINT System v2.0</h1>
+                <p>Status: <strong>Running</strong></p>
+                <p>Port: {PORT}</p>
+                <p>Environment: {os.getenv('ENVIRONMENT', 'production')}</p>
+                <hr>
+                <h2>Test Endpoints:</h2>
+                <ul>
+                    <li><a href="/health">/health</a> - Health check</li>
+                    <li><a href="/status">/status</a> - Status info</li>
+                </ul>
+            </body>
+            </html>
+            """
+            self.wfile.write(response.encode())
+        elif self.path == '/health':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            response = '{"status": "healthy", "message": "Server is running"}'
+            self.wfile.write(response.encode())
+        elif self.path == '/status':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            response = '{"status": "idle", "port": ' + str(PORT) + '}'
+            self.wfile.write(response.encode())
+        else:
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(b'Not Found')
 
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', 8002))
-    logger.info(f"Starting Enhanced OSINT System on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    print(f"🚀 Starting Enhanced OSINT System test server on port {PORT}")
+    with socketserver.TCPServer(("", PORT), TestHandler) as httpd:
+        print(f"✅ Server started successfully on port {PORT}")
+        print(f"🌐 Access at: http://localhost:{PORT}")
+        httpd.serve_forever()
