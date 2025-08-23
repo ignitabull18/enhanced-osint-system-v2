@@ -16,6 +16,7 @@ from osint_tools.dns_utils import get_mail_server_details
 from osint_tools.whois_utils import domain_whois
 from osint_tools.social_media import social_media_lookup
 
+
 def get_leads_from_sandbox(limit: int = 1000) -> List[Dict]:
     """Get real leads from the sandbox table for testing"""
     # For now, we'll use sample data that represents real leads
@@ -200,6 +201,7 @@ def get_leads_from_sandbox(limit: int = 1000) -> List[Dict]:
     
     return sample_leads[:limit]
 
+
 def enrich_real_lead(lead: Dict) -> Dict:
     """Enrich a single real lead with OSINT data"""
     print(f"🔍 Processing Lead {lead['id']}: {lead['email']}")
@@ -332,6 +334,7 @@ def enrich_real_lead(lead: Dict) -> Dict:
     
     return enrichment_result
 
+
 def process_leads_parallel(leads: List[Dict], max_workers: int = 10) -> List[Dict]:
     """Process leads in parallel using ThreadPoolExecutor"""
     print(f"🚀 PARALLEL PROCESSING with {max_workers} workers")
@@ -369,6 +372,7 @@ def process_leads_parallel(leads: List[Dict], max_workers: int = 10) -> List[Dic
     
     return results
 
+
 def process_real_leads_production_parallel(num_leads: int = 10, max_workers: int = 5, batch_size: int = 1000, pb_client=None, processing_status_ref=None):
     """Process real leads in production mode with PARALLEL PROCESSING"""
     print("🚀 PRODUCTION CLOUD OSINT ENRICHMENT - PARALLEL VERSION")
@@ -383,6 +387,20 @@ def process_real_leads_production_parallel(num_leads: int = 10, max_workers: int
     
     # Get real leads from sandbox
     leads = get_leads_from_sandbox(num_leads)
+
+    # Optionally write initial status to PocketBase
+    try:
+        if pb_client and processing_status_ref:
+            pb_client.update_processing_status({
+                "job_id": processing_status_ref.get("current_job", "unknown"),
+                "status": "running",
+                "total_leads": len(leads),
+                "processed_leads": 0,
+                "successful_leads": 0,
+                "failed_leads": 0,
+            })
+    except Exception:
+        pass
     
     if not leads:
         print("❌ No leads found to process")
@@ -390,16 +408,49 @@ def process_real_leads_production_parallel(num_leads: int = 10, max_workers: int
     
     print(f"🧪 Processing {len(leads)} real leads from sandbox")
     print()
+
+    # Optionally create lead records in PocketBase before enrichment
+    if pb_client:
+        for lead in leads:
+            try:
+                pb_client.create_lead({
+                    "email": lead.get("email"),
+                    "company": lead.get("company"),
+                    "country": lead.get("country"),
+                    "source": lead.get("source", "sandbox"),
+                    "industry": lead.get("industry", "")
+                })
+            except Exception:
+                # Continue even if PocketBase rejects unknown fields
+                pass
     
     # Process leads in parallel
     results = process_leads_parallel(leads, max_workers)
     
     # Calculate summary statistics
     total_time = time.time() - total_start_time
-    completed_leads = [r for r in results if r["status"] == "completed"]
-    avg_score = sum(r["score"] for r in completed_leads) / len(completed_leads) if completed_leads else 0
-    success_rate = len(completed_leads) / len(results) * 100
-    
+    completed_leads = [r for r in results if r.get("status") == "completed"]
+    avg_score = sum(r.get("score", 0) for r in completed_leads) / len(completed_leads) if completed_leads else 0
+    success_rate = (len(completed_leads) / len(results) * 100) if results else 0
+
+    # Optionally write OSINT results to PocketBase
+    if pb_client and results:
+        for r in results:
+            try:
+                pb_client.create_osint_result({
+                    "lead_id": r.get("lead_id"),
+                    "email": r.get("email"),
+                    "company": r.get("company"),
+                    "country": r.get("country"),
+                    "score": r.get("score", 0),
+                    "status": r.get("status"),
+                    "processing_time": r.get("processing_time", 0),
+                    # Store enrichment data as JSON string to maximize schema compatibility
+                    "enrichment_json": json.dumps(r.get("enrichment_data", {}), ensure_ascii=False)
+                })
+            except Exception:
+                pass
+
     # Update processing status if provided
     if processing_status_ref:
         processing_status_ref['processed_leads'] = len(results)
@@ -407,6 +458,22 @@ def process_real_leads_production_parallel(num_leads: int = 10, max_workers: int
         processing_status_ref['failed_leads'] = len(results) - len(completed_leads)
         processing_status_ref['progress_percentage'] = 100.0
         processing_status_ref['last_update'] = datetime.now().isoformat()
+
+    # Write final status to PocketBase
+    try:
+        if pb_client and processing_status_ref:
+            pb_client.update_processing_status({
+                "job_id": processing_status_ref.get("current_job", "unknown"),
+                "status": "completed",
+                "total_leads": len(results),
+                "processed_leads": len(results),
+                "successful_leads": len(completed_leads),
+                "failed_leads": len(results) - len(completed_leads),
+                "average_score": avg_score,
+                "total_processing_time": total_time
+            })
+    except Exception:
+        pass
     
     print("📊 PARALLEL ENRICHMENT RESULTS")
     print("=" * 70)
@@ -457,6 +524,7 @@ def process_real_leads_production_parallel(num_leads: int = 10, max_workers: int
         print()
     
     return results
+
 
 if __name__ == "__main__":
     # Process real leads in production mode with PARALLEL PROCESSING
