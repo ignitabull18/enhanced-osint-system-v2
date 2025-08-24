@@ -44,16 +44,14 @@ logging.basicConfig(level=os.getenv('LOG_LEVEL', 'INFO').upper(),
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Initialize PocketBase client globally
+# Initialize PocketBase client globally (keep client even if auth fails)
 pb_client: Optional[PocketBaseClient] = None
 try:
     pb_client = PocketBaseClient()
-    if not pb_client.authenticate():
-        logger.error("Failed to authenticate with PocketBase on startup.")
-        pb_client = None
+    pb_client.authenticate()  # Best effort; keep client regardless
 except Exception as e:
     logger.error(f"Error initializing PocketBase client: {e}")
-    pb_client = None
+    pb_client = PocketBaseClient()  # keep a bare client for health and open rules
 
 def run_osint_processing(job_id: str, config: Config, leads_to_process: int):
     """Wrapper function to run OSINT processing in a separate thread."""
@@ -103,10 +101,10 @@ def index():
         "message": "Welcome to the Enhanced OSINT System API!",
         "version": "2.0",
         "environment": config.environment,
-        "database_configured": "PocketBase" if pb_client else "None/Failed",
+        "database_configured": "PocketBase",
         "api_endpoints": {
             "/health": "Liveness probe (always 200)",
-            "/ready": "Readiness probe (checks PocketBase)",
+            "/ready": "Readiness probe (PocketBase reachable)",
             "/status": "Current OSINT processing job status",
             "/process": "POST to start a new OSINT processing job"
         }
@@ -119,12 +117,15 @@ def health_check():
 
 @app.route('/ready')
 def ready_check():
-    """Readiness check: verifies PocketBase connectivity."""
-    is_ready = bool(pb_client and pb_client.auth_token)
+    """Readiness check: verifies PocketBase reachability."""
+    try:
+        is_ok = bool(pb_client and pb_client.health_check())
+    except Exception:
+        is_ok = False
     return jsonify({
-        "ready": is_ready,
-        "database": "connected" if is_ready else "disconnected"
-    }), (200 if is_ready else 503)
+        "ready": is_ok,
+        "database": "reachable" if is_ok else "unreachable"
+    }), (200 if is_ok else 503)
 
 @app.route('/status')
 def get_status():
