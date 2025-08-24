@@ -20,6 +20,7 @@ from flask import Flask, request, jsonify
 from config.settings import get_config, Config
 from core.enrichment import process_real_leads_production_parallel
 from core.pocketbase_client import PocketBaseClient
+from core.exporter import run_post_job_export
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -36,7 +37,9 @@ processing_status = {
     'failed_leads': 0,
     'progress_percentage': 0.0,
     'last_update': None,
-    'error_message': None
+    'error_message': None,
+    'export_results': None,
+    'export_error': None
 }
 
 # Configure logging
@@ -68,6 +71,8 @@ def run_osint_processing(job_id: str, config: Config, leads_to_process: int):
     processing_status['progress_percentage'] = 0.0
     processing_status['last_update'] = datetime.now().isoformat()
     processing_status['error_message'] = None
+    processing_status['export_results'] = None
+    processing_status['export_error'] = None
 
     try:
         # Call the main OSINT processing function
@@ -80,6 +85,18 @@ def run_osint_processing(job_id: str, config: Config, leads_to_process: int):
         )
         processing_status['status'] = 'completed'
         logger.info(f"OSINT processing job {job_id} completed successfully.")
+        
+        # Run post-job export to Supabase
+        if processing_status['status'] == 'completed':
+            logger.info(f"Running post-job export for {job_id}...")
+            try:
+                export_results = run_post_job_export(pb_client=pb_client, job_id=job_id)
+                processing_status['export_results'] = export_results
+                logger.info(f"Post-job export completed: {export_results}")
+            except Exception as export_error:
+                logger.error(f"Post-job export failed: {export_error}", exc_info=True)
+                processing_status['export_error'] = str(export_error)
+                
     except Exception as e:
         processing_status['status'] = 'failed'
         processing_status['error_message'] = str(e)
@@ -106,7 +123,8 @@ def index():
             "/health": "Liveness probe (always 200)",
             "/ready": "Readiness probe (PocketBase reachable)",
             "/status": "Current OSINT processing job status",
-            "/process": "POST to start a new OSINT processing job"
+            "/process": "POST to start a new OSINT processing job",
+            "/export": "POST to manually trigger export to Supabase"
         }
     })
 
@@ -157,6 +175,26 @@ def start_processing():
         "max_workers": config.processing.max_workers,
         "status_endpoint": "/status"
     }), 202
+
+@app.route('/export', methods=['POST'])
+def manual_export():
+    """Manually trigger export of enriched leads to Supabase."""
+    try:
+        data = request.get_json() or {}
+        job_id = data.get('job_id')  # Optional specific job ID
+        
+        export_results = run_post_job_export(pb_client=pb_client, job_id=job_id)
+        
+        return jsonify({
+            "message": "Export completed",
+            "results": export_results
+        }), 200
+    except Exception as e:
+        logger.error(f"Manual export failed: {e}", exc_info=True)
+        return jsonify({
+            "error": "Export failed",
+            "message": str(e)
+        }), 500
 
 if __name__ == '__main__':
     config = get_config()
